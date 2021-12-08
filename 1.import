@@ -1,0 +1,19 @@
+import requests
+import ctypes
+import win32com.client
+import sys
+from PyQt5.QtWidgets import *
+import win32com.client # win32com 모듈 import
+from pywinauto import application
+import time
+import os
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import sklearn as sk
+from sklearn.preprocessing import MinMaxScaler as MS
+import datetime
+
+
+from shholiday import holiday2020 as hd
+from datetime import  datetime
