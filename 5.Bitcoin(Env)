@@ -1,0 +1,296 @@
+
+class Env:
+    def __init__(self):
+        self.price=0
+        self.sto_remember=[]
+        self.sto_remember2=[]
+        
+        self.count=0
+        self.count2=0
+        
+        self.gold_count=0
+        self.dead_count=0
+        
+        self.low_limit=0
+        self.have=0
+        self.have_price=0
+        self.balance=0
+        self.buy_check=0 #특정조건으로 매수했는지
+        self.plus_buy_count=1 #추가매수 횟수
+        self.end=0
+        
+        
+    def reset(self):
+        self.sto_remember=[]
+        self.sto_remember2=[]
+        
+        self.count=0
+        self.count2=0
+        
+        self.gold_count=0
+        self.dead_count=0
+        
+        self.low_limit=0
+        self.have=0
+        self.buy_check=0
+        self.plus_buy_count=1
+        self.end=0
+        
+        
+    def data_create(self,period,name,minute):
+        data=py.get_ohlcv(name,minute,count=1000)
+        df=pd.DataFrame(data)
+        series=pd.Series(df['close'].values)
+        series2=pd.Series(df['volume'].values)
+        
+        return series,series2
+            
+    
+    def sto_RSI(self,period,name,minute):
+        
+        series,volume=self.data_create(period,name,minute)
+
+        period=period
+        smoothK=3
+        smoothD=3
+
+        delta = series.diff().dropna()
+        ups = delta * 0
+        downs = ups.copy()
+        ups[delta > 0] = delta[delta > 0]
+        downs[delta < 0] = -delta[delta < 0]
+        ups[ups.index[period-1]] = np.mean( ups[:period] )
+        ups = ups.drop(ups.index[:(period-1)])
+        downs[downs.index[period-1]] = np.mean( downs[:period] )
+        downs = downs.drop(downs.index[:(period-1)])
+        rs = ups.ewm(com=period-1,min_periods=0,adjust=False,ignore_na=False).mean() / \
+             downs.ewm(com=period-1,min_periods=0,adjust=False,ignore_na=False).mean() 
+        rsi = 100 - 100 / (1 + rs)
+
+        stochrsi  = (rsi - rsi.rolling(period).min()) / (rsi.rolling(period).max() - rsi.rolling(period).min())
+        stochrsi_K = stochrsi.rolling(smoothK).mean()
+        stochrsi_D = stochrsi_K.rolling(smoothD).mean()
+
+        print(name,period,smoothK,smoothD)    
+        print(' stoch_rsi_D: ', stochrsi_D.iloc[-1]*100,'----',minute,'분')
+        print('')
+        sto_rsi=stochrsi_D.iloc[-1]*100
+        total_sto=stochrsi_D[:]
+        plt.plot(stochrsi_D[50:])
+
+        return sto_rsi,total_sto
+    
+    
+    def Average_line(self,name,minute):
+        data=py.get_ohlcv(name, interval=minute, count=1000)
+        data=pd.Series(data['close'].values)
+        A20=data.rolling(20).mean()
+        A60=data.rolling(60).mean()
+        A120=data.rolling(120).mean()
+        
+        return A20,A60,A120
+    
+    
+    def VR(self,period,name,minute):   # volume Ratio 계산
+        time.sleep(0.1)
+        #VR=((N일간 상승일 거래량의 합)/(N일간 하락일 거래량의 합))*100
+        series,Volume=self.data_create(period,name,minute)
+        series=series.diff().dropna()
+
+        ups=Volume*0
+        down=Volume*0
+
+        ups_index=series.index[series>0]
+        down_index=series.index[series<0]
+
+        ups[ups_index]=Volume[ups_index]
+        down[down_index]=Volume[down_index]
+
+        Volume_plus=ups.rolling(period).sum()
+        Volume_minus1=down.rolling(period).sum()
+        Volume_minus=np.abs(Volume_minus1)
+
+        VR=(Volume_plus/Volume_minus)*100
+        
+        plt.plot(VR)
+        
+        return VR
+    
+    
+    
+    def sto_alarm(self,period,name,minute):    #매수이후 stoRSI 80 두번넘을때 알려주는 알람
+                                            #조건-잠깐 떨어졌다 오르는경우 있으므로 x sto60이하 갔다가 올라야카운트
+        sto_RSI,total_RSI= self.sto_RSI(period,name,minute)
+        end=0
+        limit=0.70
+        #sto_rsi 데이터 수집(실시간은 제외)
+        if self.sto_remember ==[]:
+            self.sto_remember.append(total_RSI.iloc[-2])
+        else:
+            if self.sto_remember[-1] != total_RSI.iloc[-2]:
+                self.sto_remember.append(total_RSI.iloc[-2])
+                
+                
+        #sto가 70퍼이상 몇번넘기는지 카운트
+        if self.count==0 and len(self.sto_remember)>1:
+            if self.sto_remember[-1]>self.sto_remember[-2] and self.sto_remember[-2]<=limit and self.sto_remember[-1]>limit:
+                self.count+=1
+        elif self.count>=1:
+            if self.sto_remember[-1]<0.6:
+                self.low_limit=1
+            if self.low_limit==1 and self.sto_remember[-1]>self.sto_remember[-2] and self.sto_remember[-2]<=limit and self.sto_remember[-1]>limit:
+                self.count+=1
+                
+                
+                
+        #종료 조건        
+        if self.count>=2:     #sto79 2번 넘는순간 매도
+            end=1
+        return end
+    
+    
+    def sto_alarm2(self,period,name,minute): #매수 이후 sto RSI 15 두번넘고 sto 15 데드크로스때 알려주는 알람
+        sto_RSI,total_RSI= self.sto_RSI(period,name,minute)
+        end=0
+        limit=0.20
+        #sto_rsi 수집
+        if self.sto_remember2==[]:
+            self.sto_remember2.append(total_RSI.iloc[-2])
+        else:
+            if self.sto_remember2[-1] != total_RSI.iloc[-2]:
+                self.sto_remember2.append(total_RSI.iloc[-2])
+                
+        
+        # sto rsi가 15퍼이상 돌파할경우 카운트 
+        if self.count2==0 and len(self.sto_remember2)>1:
+            if self.sto_remember2[-1]>self.sto_remember2[-2] and self.sto_remember2[-2]<=limit and self.sto_remember2[-1]>limit:
+                self.count2+=1
+            
+        elif self.count2>=1:   #2번오르고 떨어지는순간일때 매도
+            if self.sto_remember2[-1]<self.sto_remember2[-2] and self.sto_remember2[-2]>limit and self.sto_remember2[-1]<=limit:
+                end=1
+                
+        return end
+    
+    
+    def trading_mind(self,period,name,minute):
+        time.sleep(0.1)
+        series,series2=self.data_create(period,name,minute)
+        series=series.diff().dropna()
+        series=series/np.abs(series)
+        
+        up= series*0
+        down= series*0
+        
+        up[series>0] = series[series>0]
+        down[series<0]= series[series<0]
+        
+        up_count=up.rolling(period).sum()
+        up_mean= up_count/period
+        
+        return up_mean
+    
+    
+    
+    def sto_limit_calculation(self,period,name,minute):
+        a,total=self.sto_RSI(period,name,minute)
+        b=total.rolling(50).min()
+        c=b.rolling(4).mean().iloc[-1]
+        return c
+        
+    
+    
+    
+    def message(self, token, channel, text):
+        response = requests.post("https://slack.com/api/chat.postMessage",
+                                 headers={"Authorization": "Bearer " + token},
+                                 data={"channel": channel, "text": text}
+                                 )
+        
+    def have_check(self,have_data,have_name):
+        for i in range(len(have_data)):
+            z=have_data[i]['currency']
+            if z==have_name:
+                self.have=1
+                break
+
+            else:
+                self.have=0
+                
+    def cross_count(self,trading_data,gold_limit,dead_limit): #어떤지표의 데이터가 들어온다,수치가 리미트를 넘는지 체크
+        
+        #리미트를 데드크로스후 골든크로스로 올라오는지 알아본다
+        
+        if trading_data.iloc[-3]<trading_data.iloc[-2] and gold_limit<trading_data.iloc[-2] and self.gold_count==0 and self.dead_count==1:
+            #골든크로스  
+            self.gold_count+=1
+            
+        elif trading_data.iloc[-3]>trading_data.iloc[-2] and dead_limit>trading_data.iloc[-2] and self.dead_count==0:
+            self.dead_count+=1
+            
+        else:
+            pass
+        
+        if self.gold_count==1 and self.dead_count==1:
+            self.end=1
+        
+        return self.end
+                
+                
+                
+    def data_list(self):  #전일대비 높은 상위 20개종목중 거래량 제일많은것 출력 (하락중인거 제외)
+                          #여기서 거래량은 각통화 기준이다. 즉 값이쌀수록 거래량이 많아질수있다 (업비트 거래량과 좀다름)
+        
+        data_List=[]  #등락0 이상 등락률과 이름  
+        name_List=[]  #등락 상위 20 이름
+        volume_list=[]  #등락 상위20 이름, 거래량
+        volume_data=[] #거래량저장
+        
+        name_list=py.get_tickers('KRW')  #원화 전체 종목
+        
+        for name in name_list:
+            data=py.get_ohlcv(name,'date',count=2)
+            fluctuation=(data['close'][1]-data['close'][0])/data['close'][1]
+            
+            if fluctuation>0:              #추가
+                data_List.append([fluctuation,name])
+            time.sleep(0.1)
+                
+            print('종목 선택중......관찰대상 ',name)
+        
+        data_dict=dict(data_List)
+        data_frame=pd.DataFrame(data_List)
+            
+        data_sorted=sorted(data_frame[0])
+        data_20=data_sorted    
+        data_20.reverse()           
+        data_20[:20]  #전일대비 등락 상위 20개
+        
+        
+        for value in data_20:    #상위20개 이름저장
+            name_List.append(data_dict[value])
+        
+        for name2 in name_List:
+            volume=py.get_ohlcv(name2,'date',count=1)['volume'][0]  #상위20개 데이터의 거래량
+            volume_data.append([volume,name2])
+            time.sleep(0.1)
+            
+        volume_max=max(volume_data)   #거래량,이름 
+                 
+        Name=volume_max[1]
+        vol=volume_max[0]
+        
+        return Name,vol
+    
+    def time_(self):
+        fseconds=time.time()
+        second=int(fseconds%60)
+        fseconds//=60
+        minute=fseconds%60
+        fseconds//=60
+        hour=fseconds%24
+        hour=(hour+9)%24
+        
+        return hour,minute,second
+        
+            
