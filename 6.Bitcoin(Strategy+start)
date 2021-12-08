@@ -1,0 +1,331 @@
+def trading1():
+    #전략
+    '''''
+    stochastic RSI , 투자심리표 , VR 20
+    매수후 손실 -3퍼이상일경우 일괄 매도 and 관망
+    매수= sto5 투심20   or sto5 VR20
+    매도= sto80 VR160 
+    손절= sto80두번 or sto 80 0.5퍼이상 손실
+    '''''
+    
+    myToken = "token code"
+    env.message(myToken, "#stock-trading", "트레이딩을 시작합니다")
+
+    #---------------------------------------------------------
+    access='access key'
+    secret='secret key'
+
+    ####로그인, 전체 잔고 조회
+    upbit = py.Upbit(access,secret)
+    env.balance= upbit.get_balance(ticker="KRW")
+    env.message(myToken, "#stock-trading",'원화=' )
+    env.message(myToken, "#stock-trading",env.balance )
+
+    balances= upbit.get_balances()
+    print('총자산',balances)
+
+
+    Name,vol=env.data_list()
+    name=Name
+    have_name=Name.replace('KRW-','')
+
+    name='KRW-BTC'
+    have_name='BTC'
+
+
+    env.message(myToken, "#stock-trading",'종목선정')
+    env.message(myToken, "#stock-trading",name )
+
+    period=14       #stochastic의 기간
+    VR_period=20
+    minute='minute3'
+    max_trading_money=100000
+    mind_period=10
+
+
+    #######################설정내용:
+    ########이전 sto_rsi, 이전 VR 
+    #######sto alarm는 이전스테이트  sto_rsi 기준으로 한다
+    #######
+
+    ###매수시 하이퍼 파라미터
+    VR_limit=30
+    trading_mind_limit=0.2
+    ###매도시 하이퍼 파라미터
+    sto_rsi_limit2=0.8
+    VR_limit2=160
+
+
+
+    while True:
+        current_hour,current_minute,current_second=env.time_()
+        if env.have==0 and ((current_minute==0 and current_second<=30) or (current_minute==30 and current_second<=30)):    #30분마다 종목을 탐색한다 (종목 미보유시)
+            try:
+                Name,vol=env.data_list()
+                name=Name
+                have_name=Name.replace('KRW-','')
+
+                name='KRW-BTC'
+                have_name='BTC'
+                env.message(myToken, "#stock-trading",'종목선정')
+                env.message(myToken, "#stock-trading",name )
+
+
+
+            except:
+                print('살만한종목이없다')
+
+
+        sto_rsi1,total_sto =env.sto_RSI(period,name,minute)
+        sto_rsi5,total_sto5 =env.sto_RSI(period,name,'minute5')
+        sto_rsi2,total_sto2=env.sto_RSI(period,name,'minute15')
+
+        sto_rsi_limit=env.sto_limit_calculation(period,name,minute)
+ 
+        sto_rsi=total_sto.iloc[-2]
+        sto_rsi5=total_sto5.iloc[-2]
+        sto_rsi15=total_sto2.iloc[-1]
+        sto_rsi15_2=total_sto2.iloc[-2]
+
+        trading_mind2=env.trading_mind(mind_period,name,'minute15')
+        trading_mind1=env.trading_mind(mind_period,name,minute)       #투자심리도
+        trading_mind55=env.trading_mind(mind_period,name,'minute5')
+        trading_mind5=trading_mind55.iloc[-2]
+        trading_mind=trading_mind1.iloc[-2]
+        trading_mind15=trading_mind2.iloc[-2]
+
+        VR1=env.VR(VR_period,name,minute)                 #VR
+        VR=VR1.iloc[-2]
+        VR15=env.VR(VR_period,name,'minute15')
+        VR15=VR15.iloc[-2]
+
+        upbit= py.Upbit(access,secret)
+        env.balance= upbit.get_balance(ticker="KRW")
+        have_data=upbit.get_balances()
+
+        env.have_check(have_data,have_name)
+
+
+
+
+    ##########################매수
+        if env.have==0:   #해당코인 미보유일경우(최초매수 포지션)
+            print(sto_rsi_limit,'sto리미트')
+            #sto,VR    or   sto,투자심리
+            if sto_rsi15<=0.40 or sto_rsi15_2<=0.22:#실시간 sto 15가 22이하일경우, 이때만 실시간 sto rsi사용 매수 기준완화
+                if (sto_rsi<sto_rsi_limit*2 and (VR<=VR_limit or VR1.iloc[-3]<=VR_limit )) or (sto_rsi<sto_rsi_limit*2 and (trading_mind<=trading_mind_limit or trading_mind1.iloc[-3]<=trading_mind_limit)):   
+                    if env.balance>max_trading_money:
+                        env.balance=max_trading_money
+                    env.buy_check=1
+
+                    res=upbit.buy_market_order(name,env.balance/3)
+                    print(name,'을',env.balance,'원 만큼 매수완료')
+
+                    env.message(myToken, "#stock-trading",'매수완료. 매수금액1' )
+                    env.message(myToken, "#stock-trading",env.balance/3 )
+
+                else:
+                    print('매수시점 선정중...')
+
+            elif sto_rsi15<=0.22 or sto_rsi15_2<=0.22:
+                if sto_rsi<=sto_rsi_limit:   
+                    if env.balance>max_trading_money:
+                        env.balance=max_trading_money
+                    env.buy_check=0
+
+                    res=upbit.buy_market_order(name,env.balance/3)
+                    print(name,'을',env.balance,'원 만큼 매수완료')
+
+                    env.message(myToken, "#stock-trading",'매수완료. 매수금액4' )
+                    env.message(myToken, "#stock-trading",env.balance/3 )
+
+                else:
+                    print('매수시점 선정중....')
+
+            else:
+                print('매수시점 선정중....')
+
+
+    ###########################매도
+
+        else:       #해당코인 보유중일경우(매도포지션)
+            print('팔시점 선정중...')
+            balance2= upbit.get_balance(name)
+            current_price= py.get_current_price(name)
+            env.have_price=0
+
+            for i in range(len(have_data)):
+                z=have_data[i]['currency']
+                if z==have_name:
+                    env.have_price=float(have_data[i]['avg_buy_price'])  #평단가
+                    break
+
+
+            end=env.sto_alarm(period,name,'minute15')
+            end2=env.sto_alarm2(period,name,'minute15')
+
+
+
+
+
+
+
+            ############################################느슨한 매수시 매도조건
+
+            #매도= 15분봉 sto60 VR160 
+            if env.buy_check==0:                 #sto rsi 15  고려안하고 매수한경우
+                if sto_rsi15_2>0.4:    #sto_rsi 0.4이하면 보유한다
+
+                    if sto_rsi>0.9 and env.have==1:    #빠른매도
+                        res= upbit.sell_market_order(name,balance2) #잔고만큼 시장가 매도
+                        env.reset()
+                        print(name,'을',balance2,'만큼 매도했다')
+
+                        env.message(myToken, "#stock-trading",'매도완료. 매도금액11' )
+                        env.message(myToken, "#stock-trading",balance2 )
+
+
+                         #손절2 or 익절 = 15분봉 sto80 이상들낙 두번    or    sto20이상 들낙 두번이고 손실
+                    if (end==1 or (end2==1 and ((current_price-env.have_price)/env.have_price)<0)) and env.have==1:
+                        res= upbit.sell_market_order(name,balance2) #잔고만큼 시장가 매도
+                        env.reset()
+                        print(name,'을',balance2,'만큼 매도했다')
+
+                        env.message(myToken, "#stock-trading",'매도완료. 매도금액5' )
+
+
+
+                    if sto_rsi15<0.6:
+                        if (sto_rsi15>0.8 and VR>VR_limit2) and env.have==1:
+                            res= upbit.sell_market_order(name,balance2) #잔고만큼 시장가 매도
+                            env.reset()
+                            print(name,'을',balance2,'만큼 매도했다')
+
+                            env.message(myToken, "#stock-trading",'매도완료. 매도금액1' )
+                            env.message(myToken, "#stock-trading",balance2 )
+
+                    else:
+                        if sto_rsi5>=0.8 and trading_mind15>0.5 and env.have==1:
+                            res= upbit.sell_market_order(name,balance2) #잔고만큼 시장가 매도
+                            env.reset()
+                            print(name,'을',balance2,'만큼 매도했다')
+
+                            env.message(myToken, "#stock-trading",'매도완료. 매도금액2' )
+                            env.message(myToken, "#stock-trading",balance2 )
+
+                        if sto_rsi5>0.9 and env.have==1:
+                            res= upbit.sell_market_order(name,balance2) #잔고만큼 시장가 매도
+                            env.reset()
+                            print('sto80 손0.5',name,'을',balance2,'만큼 매도했다')
+
+                            env.message(myToken, "#stock-trading",'매도완료. 매도금액0' )
+                            env.message(myToken, "#stock-trading",balance2 )
+
+
+
+            ##############################빡센 조건으로 매수시 매도조건
+            else:        #sto 15 고려하고 상대적으로 좋은시점에 매수한경우(위 조건보다 오래보유함)
+                if (sto_rsi15>0.8 and VR>VR_limit2) and env.have==1 :
+                    res= upbit.sell_market_order(name,balance2) #잔고만큼 시장가 매도
+                    env.reset()
+                    print(name,'을',balance2,'만큼 매도했다')
+
+                    env.message(myToken, "#stock-trading",'매도완료. 매도금액3' )
+                    env.message(myToken, "#stock-trading",balance2 )
+
+
+                if sto_rsi5>0.9 and env.have==1:
+                    res= upbit.sell_market_order(name,balance2) #잔고만큼 시장가 매도
+                    env.reset()
+                    print('sto80 손0.5',name,'을',balance2,'만큼 매도했다')
+
+                    env.message(myToken, "#stock-trading",'매도완료. 매도금액0' )
+                    env.message(myToken, "#stock-trading",balance2 )
+
+
+
+                #손절1= 5분봉 sto60이상 이고 손실 
+                if ((current_price-env.have_price)/env.have_price)<0 and sto_rsi5>sto_rsi_limit2 and env.have==1: 
+                    res= upbit.sell_market_order(name,balance2) #잔고만큼 시장가 매도
+                    env.reset()
+                    print('sto80 손0.5',name,'을',balance2,'만큼 매도했다')
+
+                    env.message(myToken, "#stock-trading",'매도완료. 매도금액4' )
+                    env.message(myToken, "#stock-trading",balance2 )
+
+
+                #손절2 or 익절 = 15분봉 sto80 이상들낙 두번    or    sto20이상 들낙 두번이고 손실
+                if (end==1 or (end2==1 and ((current_price-env.have_price)/env.have_price)<0)) and env.have==1:
+                    res= upbit.sell_market_order(name,balance2) #잔고만큼 시장가 매도
+                    env.reset()
+                    print(name,'을',balance2,'만큼 매도했다')
+
+                    env.message(myToken, "#stock-trading",'매도완료. 매도금액10' )
+                    env.message(myToken, "#stock-trading",balance2 )
+                    env.message(myToken, "#stock-trading",end)
+                    env.message(myToken, "#stock-trading",end2)
+
+
+
+
+
+            #############################추가매수 조건
+            if ((current_price-env.have_price)/env.have_price)<0 and total_sto.iloc[-2]<(sto_rsi_limit/1.5) and sto_rsi15<0.4 and env.have==1:
+                #손실중이고 이전storsi 조건이 리미트이하, sto15가 40%이하
+                if env.plus_buy_count==1:  #추매하고나면 2턴 대기하다 조건만족시 다시매수
+                    if total_sto.iloc[-4]<(sto_rsi_limit/1.5):
+                        if env.balance>max_trading_money:
+                            env.balance=max_trading_money
+                        res=upbit.buy_market_order(name,env.balance/5)
+                        print(name,'을',env.balance,'원 만큼 매수완료')
+
+                        env.plus_buy_count+=1
+
+                        env.message(myToken, "#stock-trading",'추가 매수완료. 매수금액3' )
+                        env.message(myToken, "#stock-trading",env.balance )
+                        env.message(myToken, "#stock-trading",env.plus_buy_count)
+
+
+                elif env.plus_buy_count>1 and env.plus_buy_count<4 :
+                    if total_sto.iloc[-6]<(sto_rsi_limit/1.5):
+                        if env.balance>max_trading_money:
+                            env.balance=max_trading_money
+                        res=upbit.buy_market_order(name,env.balance/5)
+                        print(name,'을',env.balance,'원 만큼 매수완료')
+
+                        env.plus_buy_count+=1
+
+                        env.message(myToken, "#stock-trading",'추가 매수완료. 매수금액3' )
+                        env.message(myToken, "#stock-trading",env.balance )
+                        env.message(myToken, "#stock-trading",env.plus_buy_count)
+
+                elif env.plus_buy_count>=4:
+                    if total_sto.iloc[-8]<(sto_rsi_limit/1.5):
+                        if env.balance>max_trading_money:
+                            env.balance=max_trading_money
+                        res=upbit.buy_market_order(name,env.balance/5)
+                        print(name,'을',env.balance,'원 만큼 매수완료')
+
+                        env.plus_buy_count+=1
+
+                        env.message(myToken, "#stock-trading",'추가 매수완료. 매수금액3' )
+                        env.message(myToken, "#stock-trading",env.balance )
+                        env.message(myToken, "#stock-trading",env.plus_buy_count)
+
+
+                else:
+                    if env.balance>max_trading_money:
+                            env.balance=max_trading_money
+                    res=upbit.buy_market_order(name,env.balance/5)
+                    print(name,'을',env.balance,'원 만큼 매수완료')
+
+
+                    env.plus_buy_count+=1
+
+                    env.message(myToken, "#stock-trading",'추가 매수완료. 매수금액3' )
+                    env.message(myToken, "#stock-trading",env.balance )
+                    env.message(myToken, "#stock-trading",env.plus_buy_count)
+
+        time.sleep(1)
+
+    
