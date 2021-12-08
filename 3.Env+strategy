@@ -1,0 +1,606 @@
+class Env:
+    def __init__(self):
+        self.end=0
+        
+        self.sto_period=14
+        self.VR_period=20
+        self.trading_period=10
+        
+        self.dead_count=0   #어떤 수치가 리미트를 몇번데드크로스 하는지 체크
+        self.gold_count=0    #어떤수치가 리미트를 골든크로스하는지 
+        self.end=0
+        self.start_money=0
+        self.money=0
+        self.stock=0
+        self.have=0
+        
+    def reset(self):
+        self.dead_count=0
+        self.gold_count=0 
+        self.end=0
+        
+        
+
+    def InitPlusCheck(self):
+        # 프로세스가 관리자 권한으로 실행 여부
+        if ctypes.windll.shell32.IsUserAnAdmin():
+            print('정상: 관리자권한으로 실행된 프로세스입니다.')
+        else:
+            print('오류: 일반권한으로 실행됨. 관리자 권한으로 실행해 주세요')
+            return False
+
+        # 연결 여부 체크
+        if (g_objCpStatus.IsConnect == 0):
+            print("PLUS가 정상적으로 연결되지 않음. ")
+            return False
+
+        # 주문 관련 초기화
+        if (g_objCpTrade.TradeInit(0) != 0):
+            print("주문 초기화 실패")
+            return False
+
+        return True
+
+
+    def daily_chart(self,name,period,interval):  #일간차트 불러오기
+        objStockChart = win32com.client.Dispatch("CpSysDib.StockChart")
+
+        objStockChart.SetInputValue(0, name)   #종목 코드 - 삼성전자
+        objStockChart.SetInputValue(1, ord('2')) # 개수로 조회
+        objStockChart.SetInputValue(4, period) # 최근 100일 치
+        objStockChart.SetInputValue(5, [0,2,3,4,5, 8]) #날짜,시가,고가,저가,종가,거래량
+        objStockChart.SetInputValue(6, ord('D')) # '차트 주가 - 일간 차트 요청
+        objStockChart.SetInputValue(7, interval)  # 차트 주기
+        objStockChart.SetInputValue(9, ord('1')) # 수정주가 사용
+
+        objStockChart.BlockRequest()
+
+        len = objStockChart.GetHeaderValue(3)
+        len_a=np.array(range(len)).tolist()
+        len_a.reverse()
+
+        print("날짜", "시가", "고가", "저가", "종가", "거래량")
+
+
+        day_=[]
+        close_=[]
+        vol_=[]
+
+
+        for i in len_a:
+            day = objStockChart.GetDataValue(0, i)
+            day_.append(day)
+
+            open = objStockChart.GetDataValue(1, i)
+            high = objStockChart.GetDataValue(2, i)
+            low = objStockChart.GetDataValue(3, i)
+
+            close = objStockChart.GetDataValue(4, i)
+            close_.append(close)
+
+            vol = objStockChart.GetDataValue(5, i)
+            vol_.append(vol)
+
+        return day_,close_,vol_
+
+    def minute_chart(self,name,period,minute):  #분봉 차트 불러오기
+        objStockChart = win32com.client.Dispatch("CpSysDib.StockChart")
+
+        objStockChart.SetInputValue(0, name)   #종목 코드 - 삼성전자
+        objStockChart.SetInputValue(1, ord('2')) # 개수로 조회
+        objStockChart.SetInputValue(4, period) # 최근 100일 치
+        objStockChart.SetInputValue(5, [0,2,3,4,5, 8]) #날짜,시가,고가,저가,종가,거래량
+        objStockChart.SetInputValue(6, ord('m')) # '차트 주가 - 일간 차트 요청
+        objStockChart.SetInputValue(7, minute)  # 차트 주기
+        objStockChart.SetInputValue(9, ord('1')) # 수정주가 사용
+
+        objStockChart.BlockRequest()
+
+        len = objStockChart.GetHeaderValue(3)
+        len_a=np.array(range(len)).tolist()
+        len_a.reverse()
+
+
+        day_=[]
+        close_=[]
+        vol_=[]
+
+        for i in len_a:
+            day = objStockChart.GetDataValue(0, i)
+            day_.append(day)
+
+            open = objStockChart.GetDataValue(1, i)
+            high = objStockChart.GetDataValue(2, i)
+            low = objStockChart.GetDataValue(3, i)
+
+            close = objStockChart.GetDataValue(4, i)
+            close_.append(close)
+
+            vol = objStockChart.GetDataValue(5, i)
+            vol_.append(vol)
+        
+
+        return day_,close_,vol_
+
+
+    def sto_RSI(self,data,sto_period,minute):  #sto_chastic의 기간,data의 기간
+        series1= data
+        
+        series2=pd.DataFrame(series1)
+        series=pd.Series(series2[0].values)
+        
+        period=sto_period
+        smoothK=3
+        smoothD=3
+
+        delta = series.diff().dropna()
+        ups = delta * 0
+        downs = ups.copy()
+        ups[delta > 0] = delta[delta > 0]
+        downs[delta < 0] = -delta[delta < 0]
+        ups[ups.index[period-1]] = np.mean( ups[:period] )
+        ups = ups.drop(ups.index[:(period-1)])
+        downs[downs.index[period-1]] = np.mean( downs[:period] )
+        downs = downs.drop(downs.index[:(period-1)])
+        rs = ups.ewm(com=period-1,min_periods=0,adjust=False,ignore_na=False).mean() / \
+             downs.ewm(com=period-1,min_periods=0,adjust=False,ignore_na=False).mean() 
+        rsi = 100 - 100 / (1 + rs)
+
+        stochrsi  = (rsi - rsi.rolling(period).min()) / (rsi.rolling(period).max() - rsi.rolling(period).min())
+        stochrsi_K = stochrsi.rolling(smoothK).mean()
+        stochrsi_D = stochrsi_K.rolling(smoothD).mean()
+
+        print(name,period,smoothK,smoothD)    
+        print(' stoch_rsi_K: ',stochrsi_K.iloc[-1]*100)
+        print(' stoch_rsi_D: ', stochrsi_D.iloc[-1]*100)
+        print('')
+        sto_rsi=stochrsi_D.iloc[-1]
+        total_sto=stochrsi_D[:]
+        
+
+        return sto_rsi,total_sto
+    
+    
+    
+    def VR(self,period,data22,Vol_):   # volume Ratio 계산
+        #VR=((N일간 상승일 거래량의 합)/(N일간 하락일 거래량의 합))*100
+        series1= data22
+        series2=pd.DataFrame(series1)
+        series=pd.Series(series2[0].values)
+        series=series.diff().dropna()
+        
+        
+        Volume1=Vol_
+        Volume2=pd.DataFrame(Volume1)
+        Volume=pd.Series(Volume2[0].values)
+
+        ups=Volume*0
+        down=Volume*0
+
+        ups_index=series.index[series>0]
+        down_index=series.index[series<0]
+
+        ups[ups_index]=Volume[ups_index]
+        down[down_index]=Volume[down_index]
+
+        Volume_plus=ups.rolling(period).sum()
+        Volume_minus1=down.rolling(period).sum()
+        Volume_minus=np.abs(Volume_minus1)
+
+        VR=(Volume_plus/Volume_minus)*100
+        
+        recent=VR.iloc[-1]
+        
+        return recent,VR
+    
+    
+    def trading_mind(self,period2,data):
+        series1= data
+        series2=pd.DataFrame(series1)
+        series=pd.Series(series2[0].values)
+        series=series.diff().dropna()
+        
+        series=(series/np.abs(series)).fillna(0)
+        
+        up= series*0
+        down= series*0
+        
+        up[series>0] = series[series>0]
+        down[series<0]= series[series<0]
+        
+        up_count=up.rolling(period2).sum()
+        up_mean= up_count/period2
+        
+        return up_mean.iloc[-1],up_mean-0.1
+    
+    
+    
+    
+    def message(self, token, channel, text):
+        response = requests.post("https://slack.com/api/chat.postMessage",
+                                 headers={"Authorization": "Bearer " + token},
+                                 data={"channel": channel, "text": text}
+                                 )
+
+
+    #주식 매수주문 
+
+    def buy(self,sell_or_buy,name,num,price,condition_num,order_code):   
+        #살지말지매도1 매수2, 이름, 매수수량, 주문단가, 주문조건1=기본IOC 2=FOK, 주문구분 (01보통,03시장가,05조건부지정가)
+        objCpCybos = win32com.client.Dispatch("CpUtil.CpCybos")
+        bConnect = objCpCybos.IsConnect
+        if (bConnect == 0):
+            print("PLUS가 정상적으로 연결되지 않음. ")
+            exit()
+
+        # 주문 초기화
+        objTrade =  win32com.client.Dispatch("CpTrade.CpTdUtil")
+
+        initCheck = objTrade.TradeInit(0)
+
+        if (initCheck != 0):
+            print("주문 초기화 실패")
+            exit()
+
+        acc = objTrade.AccountNumber[0] #계좌번호
+        accFlag = objTrade.GoodsList(acc, 1)  # 주식상품 구분
+        print(acc, accFlag[0])
+        objStockOrder = win32com.client.Dispatch("CpTrade.CpTd0311")
+        objStockOrder.SetInputValue(0, sell_or_buy)   # 2: 매수
+        objStockOrder.SetInputValue(1, acc )   #  계좌번호
+        objStockOrder.SetInputValue(2, accFlag[0])   # 상품구분 - 주식 상품 중 첫번째
+        objStockOrder.SetInputValue(3, name)   # 종목코드 - 필요한 종목으로 변경 필요 
+        objStockOrder.SetInputValue(4, num)   # 매수수량 - 요청 수량으로 변경 필요 
+        objStockOrder.SetInputValue(5, price)   # 주문단가 - 필요한 가격으로 변경 필요 
+        objStockOrder.SetInputValue(7, condition_num)   # 주문 조건 구분 코드, 0: 기본 1: IOC 2:FOK
+        objStockOrder.SetInputValue(8, order_code)   # 주문호가 구분코드 - 01: 보통 03 지정가 05 조건부 지정가
+
+
+        # 매수 주문 요청
+        nRet = objStockOrder.BlockRequest()
+        if (nRet != 0) :
+            print("주문요청 오류", nRet)    
+            # 0: 정상,  그 외 오류, 4: 주문요청제한 개수 초과 
+            exit()
+
+        rqStatus = objStockOrder.GetDibStatus()
+        errMsg = objStockOrder.GetDibMsg1()
+        if rqStatus != 0:
+            print("주문 실패: ", rqStatus, errMsg)
+            exit()
+            
+            
+    
+    def get_current_cash(self):
+        """증거금 100% 주문 가능 금액을 반환한다."""
+        cpTradeUtil.TradeInit()
+        acc = cpTradeUtil.AccountNumber[0]    # 계좌번호
+        accFlag = cpTradeUtil.GoodsList(acc, 1) # -1:전체, 1:주식, 2:선물/옵션
+        cpCash.SetInputValue(0, acc)              # 계좌번호
+        cpCash.SetInputValue(1, accFlag[0])      # 상품구분 - 주식 상품 중 첫번째
+        cpCash.BlockRequest() 
+        return cpCash.GetHeaderValue(9) # 증거금 100% 주문 가능 금액 
+    
+    def get_current_price(self,code):
+        """인자로 받은 종목의 현재가, 매수호가, 매도호가를 반환한다."""
+        cpStock.SetInputValue(0, code)  # 종목코드에 대한 가격 정보
+        cpStock.BlockRequest()
+        item = {}
+        item['cur_price'] = cpStock.GetHeaderValue(11)   # 현재가
+        item['ask'] =  cpStock.GetHeaderValue(16)        # 매수호가
+        item['bid'] =  cpStock.GetHeaderValue(17)        # 매도호가 
+        
+        return item['cur_price'], item['ask'], item['bid']
+    
+    def get_stock_balance(self,code):
+        """인자로 받은 종목의 종목명과 수량을 반환한다."""
+        cpTradeUtil.TradeInit()
+        acc = cpTradeUtil.AccountNumber[0]      # 계좌번호
+        accFlag = cpTradeUtil.GoodsList(acc, 1) # -1:전체, 1:주식, 2:선물/옵션
+        cpBalance.SetInputValue(0, acc)         # 계좌번호
+        cpBalance.SetInputValue(1, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
+        cpBalance.SetInputValue(2, 50)          # 요청 건수(최대 50)
+        cpBalance.BlockRequest()     
+        if code == 'ALL':
+            dbgout('계좌명: ' + str(cpBalance.GetHeaderValue(0)))
+            dbgout('결제잔고수량 : ' + str(cpBalance.GetHeaderValue(1)))
+            dbgout('평가금액: ' + str(cpBalance.GetHeaderValue(3)))
+            dbgout('평가손익: ' + str(cpBalance.GetHeaderValue(4)))
+            dbgout('종목수: ' + str(cpBalance.GetHeaderValue(7)))
+        stocks = []
+        for i in range(cpBalance.GetHeaderValue(7)):
+            stock_code = cpBalance.GetDataValue(12, i)  # 종목코드
+            stock_name = cpBalance.GetDataValue(0, i)   # 종목명
+            stock_qty = cpBalance.GetDataValue(15, i)   # 수량
+            if code == 'ALL':
+                dbgout(str(i+1) + ' ' + stock_code + '(' + stock_name + ')' 
+                    + ':' + str(stock_qty))
+                stocks.append({'code': stock_code, 'name': stock_name, 
+                    'qty': stock_qty})
+            if stock_code == code:  
+                return stock_name, stock_qty
+        if code == 'ALL':
+            return stocks
+        else:
+            stock_name = cpCodeMgr.CodeToName(code)
+            return stock_name, 0
+            
+            
+
+            
+            
+    def cross_count(self,trading_data,gold_limit,dead_limit): #어떤지표의 데이터가 들어온다,수치가 리미트를 넘는지 체크
+        
+        #리미트를 데드크로스후 골든크로스로 올라오는지 알아본다
+        
+        if trading_data.iloc[-3]<trading_data.iloc[-2] and gold_limit<trading_data.iloc[-2] and self.gold_count==0 and self.dead_count==1:
+            #골든크로스  
+            self.gold_count+=1
+            
+        elif trading_data.iloc[-3]>trading_data.iloc[-2] and dead_limit>trading_data.iloc[-2] and self.dead_count==0:
+            self.dead_count+=1
+            
+        else:
+            pass
+        
+        if self.gold_count==1 and self.dead_count==1:
+            self.end=1
+        
+        return self.end
+    
+    
+    
+    
+    
+    
+    
+    
+    def minmax_data(self,data):    #지표값들을 (0-1사이)정규화해서 출력
+        
+        scaler=MS(feature_range=(0,1))   
+        d1=pd.DataFrame(data)
+        out=scaler.fit_transform(d1)
+        
+        return out
+    
+    def time_check(self):
+        fseconds=time.time()
+        second=int(fseconds%60)
+        fseconds//=60
+        minute=fseconds%60
+        fseconds//=60
+        hour=fseconds%24
+        hour=(hour+9)%24
+        
+        day_index=datetime.today().weekday()  #0-6 월-일
+        
+        now = datetime.now()
+        day=datetime.date(now).weekday()
+
+        daytuple = (now.month,now.day) # 1월 1일이 휴일인지 확인하고 싶을 때
+        nowholiday = hd.holiday2020()
+        공휴일=nowholiday.is_holiday(daytuple)
+        
+        return hour,minute,second,day_index,공휴일
+        #시간 분 초 요일, 공휴일인지 반환
+    
+    
+    
+    
+        
+        
+        
+    def back_testing(self,name,minute_period,minute,money):   #이름 ,기간 , 선택 분봉, 가진돈
+        
+        self.start_money=money
+        self.money=money
+        self.stock=0
+        
+        hold_PV_data=[] #처음사서 들고있을경우 PV
+        PV_data=[]  #시스템트레이딩시 PV변화
+        buy_data=[] #매수날짜
+        
+        idx=50 #idx기간 이후부터 매매
+        
+        
+        day,data,vol=self.minute_chart(name,minute_period,minute)   #하락장 데이터
+        data=data[:720]
+        
+        
+        day,data,vol=self.minute_chart(name,minute_period,minute)  #데이터 생성
+        
+        
+        
+        b=divmod(self.money,data[idx])
+        first_PV=(data[idx]*b[0])+b[1]
+        hold_PV_data.append(first_PV)
+        
+        for i in range(len(data)):  #리스트형태 종가 데이터 
+            test_data=data[:i+1]
+            test_vol=vol[:i+1]
+            day1=day[:i+1]
+            
+            print(i)
+            if len(test_data)>idx:   #데이터 50개 부터 트레이딩 시뮬레이션 시작
+                
+                sto_rsi,total_sto=self.sto_RSI(test_data,14,minute)  #sto_chastic의 기간,data의 기간
+                sto_rsi15,total_sto15=self.sto_RSI(test_data,14,15)
+                
+                VR,total_VR=self.VR(20,test_data,test_vol)
+                TM,total_TM=self.trading_mind(10,test_data)
+                minmax_sto=self.minmax_data(total_sto)
+                minmax_sto1=pd.DataFrame(minmax_sto)
+                minmax_VR=self.minmax_data(total_VR)
+                minmax_TM=self.minmax_data(total_TM)
+                
+                # limit 골든크로스 할시에 매수  #-----------------------
+                gold_limit=0.2
+                dead_limit=0.2
+                target_=total_TM
+                
+                
+                
+                end=self.cross_count(target_,gold_limit,dead_limit)  #--------------------------
+                
+               #---------------------------------
+                
+                
+                if end==1 and self.money>test_data[-1] : #매수(풀매수한다)  #크로스 체크 엔드 뜨면 매수
+                    
+                    a=divmod(self.money,test_data[-1])
+                    
+                    self.stock += a[0]
+                    self.money -= a[0]*test_data[-1]
+                    
+                    buy_data.append(first_PV+first_PV*0.002)
+                    
+                    self.reset()
+                    
+                    
+                else:
+                    buy_data.append(first_PV)
+                
+                if VR>300  :  #풀매도   # -------------------------
+                    self.money+=(self.stock*test_data[-1])  
+                    self.stock=0
+                    
+                    self.reset()
+                    
+                    buy_data.append(first_PV-first_PV*0.002)
+                    
+                    
+                    
+                    
+                    
+                print(day1[-1],'날짜')
+                print(test_data[-1],'현재가')
+                    
+                last_PV=test_data[-1]*b[0]+b[1]
+                sys_PV=test_data[-1]*self.stock+self.money
+
+                print(i,'번째 스탭',self.money,'자산',self.stock,'가진주식수')
+
+                hold_PV_data.append(last_PV)
+                PV_data.append((self.money+self.stock*test_data[-1]))
+            
+        
+        print(minute_period*minute,'분간의 시뮬레이션', (minute_period*minute)/60 ,'시간')
+        print(test_data[0],'=처음가격', test_data[-1],'=마지막 가격')
+        
+        print('처음부터 걍 계속 들고있을경우 수익',first_PV,'처음 pv', last_PV,'마지막 pv', last_PV-first_PV,'수익')
+        print('시스템 트레이딩 결과 PV',(self.money+self.stock*test_data[-1]),'수익',(self.money+self.stock*test_data[-1])-self.start_money)
+        
+        
+        plt.plot(buy_data)
+        plt.plot(hold_PV_data)
+        plt.plot(PV_data,'g')
+        
+        return buy_data
+        
+        
+        
+        
+        
+        
+        
+    def start(self,limit_trading_money,name,minute_period,minute):
+        start_money=self.get_current_cash()
+        
+        myToken = "xoxb-1993298947696-1969711720387-IcvUfaO4AMl3x65ALfwydlmU"
+        self.message(myToken, "#stock-trading", "Kindex S&P 트레이딩을 시작합니다")
+        
+        
+        while True:
+            
+            hour,minute_,second,day,holiday=self.time_check()
+            
+            if holiday==True or day==5 or day==6:
+                print('오늘은 휴장 입니다')
+                time.sleep(60)
+                
+            else:
+                 #매매일 인경우
+                if 10<=hour and hour<15:   #10시부터 3시까지만 매매
+                    if hour==10 and minute==0 and second==0:
+                        self.message(myToken, "#stock-trading", "공휴일 제외 오전10시- 오후 15시까지 Kindex S&P 탐색...")
+
+                    self.money=self.get_current_cash() #현재 가진돈
+                    if self.money>limit_trading_money:#매매할돈 리미트 설정
+                        self.money=limit_trading_money
+
+                    self.start_money=start_money  #초기머니
+                    stock_name,self.stock=self.get_stock_balance(name)  #매매 네임
+                    self.price,ask,bid=self.get_current_price(name) #현재가,매수호가,매도호가 
+                    validate_price=cpBalance.GetHeaderValue(4)#평가손익
+
+                    hold_PV_data=[] #처음사서 들고있을경우 PV
+                    PV_data=[]  #시스템트레이딩시 PV변화
+                    buy_data=[] #매수날짜
+
+                    day,data,vol=self.minute_chart(name,minute_period,minute)  #데이터 생성
+
+                    
+                    sto_rsi,total_sto=self.sto_RSI(data,14,minute)  #sto_chastic의 기간,data의 기간
+                    sto_rsi15,total_sto15=self.sto_RSI(data,14,15)
+                    VR,total_VR=self.VR(20,data,vol)
+                    TM,total_TM=self.trading_mind(10,data)
+                    print(total_TM.iloc[-2],'TM')
+                    print(total_VR.iloc[-2],'VR')
+
+          ####################매매 조건
+                    # limit 골든크로스 할시에 매수  #-----------------------
+                    gold_limit=0.25
+                    dead_limit=0.25
+                    target_=total_TM
+
+
+                    end=self.cross_count(target_,gold_limit,dead_limit)  #--------------------------
+
+                    buy_num=divmod(self.money/2,self.price)[0]   #매매할수량   (현재가 들어옴) 가진돈의 50퍼
+                    sell_num=self.stock
+                    order_code='01' #보통
+
+
+                    if end==1 and self.money>self.price and self.have==0:   #가진돈의 50프로 매수
+
+                         #살지말지 매도1 매수2, 이름, 매수수량, 주문단가, 주문조건1=기본IOC 2=FOK, 주문구분 (01보통,03시장가,05조건부지정가)
+                        self.buy(2,name,buy_num,self.price,1,order_code)
+                        self.have=1 
+                        self.message(myToken, "#stock-trading", "매수 주문")
+                        self.reset()
+
+
+                    if self.have==1 and target_<=0.1 and 0>validate_price: # 추매할지 여부 
+
+                        self.buy(2,name,buy_num,self.price,1,order_code)
+                        self.message(myToken, "#stock-trading", "추가 매수")
+                        self.have=1
+
+
+                    if VR>300 and self.have==1 :  #풀매도   # -------------------------
+                        self.buy(1,name,sell_num,self.price,1,order_code)
+                        self.have=0
+                        self.message(myToken, "#stock-trading", "매도 주문")
+                        self.reset()
+
+                else:
+                    if hour==15 and minute==30 and (second>=0 and second<=2):
+                        print('--장마감----대기중-----')
+
+                    print('장마감')
+
+
+
+                time.sleep(1)
+                
+                
+            
+            
+            
+                
+                
+                
+                
+            
+
+
