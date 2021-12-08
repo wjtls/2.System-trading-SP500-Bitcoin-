@@ -1,0 +1,6 @@
+env=Env()
+limit_trading_money=20000
+name='A360200'
+minute_period=1000
+minute=120
+env.start(limit_trading_money,name,minute_period,minute)
