@@ -1,1 +1,3 @@
-hi염
+Bitcoin과 stock(SP500) system trading
+
+1.
