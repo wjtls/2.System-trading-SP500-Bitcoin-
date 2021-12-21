@@ -45,7 +45,7 @@ class Env:
     def daily_chart(self,name,period,interval):  #일간차트 불러오기
         objStockChart = win32com.client.Dispatch("CpSysDib.StockChart")
 
-        objStockChart.SetInputValue(0, name)   #종목 코드 - 삼성전자
+        objStockChart.SetInputValue(0, name)   #종목 코드 
         objStockChart.SetInputValue(1, ord('2')) # 개수로 조회
         objStockChart.SetInputValue(4, period) # 최근 100일 치
         objStockChart.SetInputValue(5, [0,2,3,4,5, 8]) #날짜,시가,고가,저가,종가,거래량
@@ -86,7 +86,7 @@ class Env:
     def minute_chart(self,name,period,minute):  #분봉 차트 불러오기
         objStockChart = win32com.client.Dispatch("CpSysDib.StockChart")
 
-        objStockChart.SetInputValue(0, name)   #종목 코드 - 삼성전자
+        objStockChart.SetInputValue(0, name)   #종목 코드
         objStockChart.SetInputValue(1, ord('2')) # 개수로 조회
         objStockChart.SetInputValue(4, period) # 최근 100일 치
         objStockChart.SetInputValue(5, [0,2,3,4,5, 8]) #날짜,시가,고가,저가,종가,거래량
