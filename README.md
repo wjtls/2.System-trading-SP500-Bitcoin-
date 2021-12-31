@@ -11,7 +11,7 @@
 
     [![주피터 Badge](https://img.shields.io/badge/jupyter-F37626?style=flat-square&logo=jupyter&logoColor=white&link=mailto:wjtls01@naver.com)](mailto:wjtls01@naver.com)
 
-- 목표: 자동매매 알고리즘 구현
+- 목표: 자동매매 로직 구현
 
 - 구현 이유: 2017년 12월경 개인적으로 코인 트레이딩을 하며 단순한 전략으로 수익을 냈었다. <br/>
    이후 2021년도에 같은 전략을 사용해도 수익을 내지 못했는데, <br/>
