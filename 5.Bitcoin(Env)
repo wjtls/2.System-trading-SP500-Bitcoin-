@@ -1,6 +1,26 @@
+import pyupbit as py
+import numpy as np
+import pandas as pd
+import requests
+import matplotlib.pyplot as plt
+import time
+
+#기준1 stochastic RSI , 투자심리표
+
+#매수후 손실 -3퍼이상일경우 일괄 매도 and 관망
+#상승장에서 : sto RSI 0일때 매수, 100매도
+#횡보장에서 : sto RSI 0일때 매수, 100매도
+#하락장 : sto RSI 0 and 투자심리 10이하 매수, 90 매도
+
+
+###RSI
+import pyupbit as py
+import numpy as np
+import pandas as pd
+import requests
 
 class Env:
-    def __init__(self):
+    def __init__(self,access,secret):
         self.price=0
         self.sto_remember=[]
         self.sto_remember2=[]
@@ -8,36 +28,34 @@ class Env:
         self.count=0
         self.count2=0
         
-        self.gold_count=0
-        self.dead_count=0
+        self.myToken = "key value"
+        self.upbit=py.Upbit(access,secret)
         
-        self.low_limit=0
-        self.have=0
-        self.have_price=0
-        self.balance=0
-        self.buy_check=0 #특정조건으로 매수했는지
-        self.plus_buy_count=1 #추가매수 횟수
-        self.end=0
+        self.low_limit=0  #
+        self.have=0      #
+        self.have_price=0#
+        self.balance=0   #자산
+        
+        self.buy_time=0 #매수후 텀을 두기위함
+        self.plus_buy_count=0 #추가매수 횟수
         
         
-    def reset(self):
+    def reset(self):  
         self.sto_remember=[]
         self.sto_remember2=[]
         
         self.count=0
         self.count2=0
         
-        self.gold_count=0
-        self.dead_count=0
         
         self.low_limit=0
         self.have=0
         self.buy_check=0
-        self.plus_buy_count=1
-        self.end=0
+        self.plus_buy_count=0
         
         
-    def data_create(self,period,name,minute):
+    def data_create(self,period,name,minute):   #데이터를 전처리하는 함수
+        time.sleep(0.2)
         data=py.get_ohlcv(name,minute,count=1000)
         df=pd.DataFrame(data)
         series=pd.Series(df['close'].values)
@@ -46,7 +64,8 @@ class Env:
         return series,series2
             
     
-    def sto_RSI(self,period,name,minute):
+    def sto_RSI(self,period,name,minute):  #stochastic RSI를 구하는 함수
+        time.sleep(0.1)
         
         series,volume=self.data_create(period,name,minute)
 
@@ -81,7 +100,7 @@ class Env:
         return sto_rsi,total_sto
     
     
-    def Average_line(self,name,minute):
+    def Average_line(self,name,minute):  #이평선을 알려주는 함수
         data=py.get_ohlcv(name, interval=minute, count=1000)
         data=pd.Series(data['close'].values)
         A20=data.rolling(20).mean()
@@ -114,11 +133,11 @@ class Env:
         
         plt.plot(VR)
         
-        return VR
+        return VR.iloc[-1],VR
     
     
     
-    def sto_alarm(self,period,name,minute):    #매수이후 stoRSI 80 두번넘을때 알려주는 알람
+    def sto_alarm(self,period,name,minute):    #매수이후 limit 두번넘을때 알려주는 알람
                                             #조건-잠깐 떨어졌다 오르는경우 있으므로 x sto60이하 갔다가 올라야카운트
         sto_RSI,total_RSI= self.sto_RSI(period,name,minute)
         end=0
@@ -149,7 +168,7 @@ class Env:
         return end
     
     
-    def sto_alarm2(self,period,name,minute): #매수 이후 sto RSI 15 두번넘고 sto 15 데드크로스때 알려주는 알람
+    def sto_alarm2(self,period,name,minute): #매수 이후 limit 두번넘고 limit 데드크로스때 알려주는 알람
         sto_RSI,total_RSI= self.sto_RSI(period,name,minute)
         end=0
         limit=0.20
@@ -173,7 +192,7 @@ class Env:
         return end
     
     
-    def trading_mind(self,period,name,minute):
+    def trading_mind(self,period,name,minute):   #투자심리도를 구하는 함수
         time.sleep(0.1)
         series,series2=self.data_create(period,name,minute)
         series=series.diff().dropna()
@@ -192,22 +211,24 @@ class Env:
     
     
     
-    def sto_limit_calculation(self,period,name,minute):
+    def sto_limit_calculation(self,period,name,minute):   #stoRsi 의 리미트를 정하는 함수
         a,total=self.sto_RSI(period,name,minute)
         b=total.rolling(50).min()
-        c=b.rolling(4).mean().iloc[-1]
+        c=b.rolling(30).mean().iloc[-1]
         return c
         
     
     
     
-    def message(self, token, channel, text):
+    def message(self, token, channel, text):  #slack에 메세지를 보낸다
         response = requests.post("https://slack.com/api/chat.postMessage",
                                  headers={"Authorization": "Bearer " + token},
                                  data={"channel": channel, "text": text}
                                  )
         
-    def have_check(self,have_data,have_name):
+        
+        
+    def have_check(self,have_data,have_name):   #가지고있는 코인중 have_name에 해당하는 코인이 있는지 체크한다
         for i in range(len(have_data)):
             z=have_data[i]['currency']
             if z==have_name:
@@ -216,25 +237,6 @@ class Env:
 
             else:
                 self.have=0
-                
-    def cross_count(self,trading_data,gold_limit,dead_limit): #어떤지표의 데이터가 들어온다,수치가 리미트를 넘는지 체크
-        
-        #리미트를 데드크로스후 골든크로스로 올라오는지 알아본다
-        
-        if trading_data.iloc[-3]<trading_data.iloc[-2] and gold_limit<trading_data.iloc[-2] and self.gold_count==0 and self.dead_count==1:
-            #골든크로스  
-            self.gold_count+=1
-            
-        elif trading_data.iloc[-3]>trading_data.iloc[-2] and dead_limit>trading_data.iloc[-2] and self.dead_count==0:
-            self.dead_count+=1
-            
-        else:
-            pass
-        
-        if self.gold_count==1 and self.dead_count==1:
-            self.end=1
-        
-        return self.end
                 
                 
                 
@@ -282,7 +284,9 @@ class Env:
         
         return Name,vol
     
-    def time_(self):
+    
+    
+    def time_(self):    #현시각 출력
         fseconds=time.time()
         second=int(fseconds%60)
         fseconds//=60
@@ -292,5 +296,196 @@ class Env:
         hour=(hour+9)%24
         
         return hour,minute,second
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    def buy_sell(self,name,balance,buy_or_sell,max_trading_money): #매매함수 (코인이름, 거래할 액수 , 살것인지팔것인지(0:sell , 1:buy))
         
+        if buy_or_sell==1:  #매수인경우
+            if balance>max_trading_money:
+                balance=max_trading_money
+            self.buy_time+=1
+            res=self.upbit.buy_market_order(name,balance)
+            print(name,'을',balance,'원 만큼 매수완료')
+
+            self.message(self.myToken, "#stock-trading",'매수완료. 매수금액' )
+            self.message(self.myToken, "#stock-trading",balance )
+            
+        elif buy_or_sell==0: #매도인경우
+            res= self.upbit.sell_market_order(name,balance) #잔고만큼 시장가 매도
+            self.reset()
+            print(name,'을',balance,'만큼 매도했다')
+
+            self.message(self.myToken, "#stock-trading",'매도. 매도금액' )
+            self.message(self.myToken, "#stock-trading",balance )
+            
+        else:   #추매인경우
+            if balance>max_trading_money:
+                    balance=max_trading_money
+            res=self.upbit.buy_market_order(name,env.balance)
+            print(name,'을',balance,'원 만큼 매수완료')
+
+            self.plus_buy_count+=1
+
+            env.message(self.myToken, "#stock-trading",'추가 매수완료. 매수금액' )
+            env.message(self.myToken, "#stock-trading",balance )
+            
+    
+    def buy_condition(self,period,name,have_name,minute,test_or_start,max_trading_money):    #매매조건식함수
+                                                                #.test_or_start (==1: 매매시작 이외:백테스팅)
+    #################파라미터 설정################
+            if test_or_start==1:  #실전매매일경우
+                #현재 시간 계산
+                
+                current_hour,current_minute,current_second=self.time_()
+                self.balance= self.upbit.get_balance(ticker="KRW")   #가진 원화
+                have_data=self.upbit.get_balances()     #가지고있는 코인
+
+                self.have_check(have_data,have_name)
+
+                if current_minute%10==0 and current_second==0:            #매수하고나서 재매수까지 (추가매수제외) 10분의 텀을 둔다
+                    self.buy_time=0
+
+
+            else:              #back testing 인경우
+                self.have=0
+                self.balance=self.balance #자산
+                self.buy_time=0 # 매수후 텀을 두기위함
+
+
+            #sto_rsi 계산
+            sto_rsi,total_sto =self.sto_RSI(period,name,minute)
+            sto_rsi3,total_sto3=self.sto_RSI(period,name,'minute3')
+
+            sto_rsi5,total_sto5=self.sto_RSI(period,name,'minute5')
+            time.sleep(0.1)
+            
+            sto_rsi15,total_sto15=self.sto_RSI(period,name,'minute15')
+
+            sto_rsi_limit=self.sto_limit_calculation(period,name,minute)
+            sto_rsi_limit3=self.sto_limit_calculation(period,name,'minute3')
+            
+            vr,total_VR=self.VR(20,name,minute)
+            print(vr,'VR')
+
+        ##########################매수
+            if self.have==0:   #해당코인 미보유일경우(최초매수 포지션)
+                print(sto_rsi_limit3,'sto3리미트')
+                print(sto_rsi_limit,'sto30리미트')
+                #sto,VR    or   sto,투자심리
+                if (total_sto.iloc[-1]<sto_rsi_limit or total_sto3.iloc[-1]<=sto_rsi_limit3) and self.buy_time==0:       
+                    #30분봉 sto rsi 0.1이하, 실시간 3분봉 지표값 리미트이하
+                    if test_or_start==1:
+                        buy_or_sell=1
+                        self.buy_sell(name,self.balance/3,buy_or_sell,max_trading_money)
+
+                else:
+                    print('매수시점 선정중...')
+
+
+
+        ###########################매도
+
+            else:       #해당코인 보유중일경우(매도포지션)
+                
+                end=self.sto_alarm(period,name,minute)
+                end2=self.sto_alarm2(period,name,minute)
+
+                if test_or_start==1:
+                    print('팔시점 선정중...')
+                    balance2= self.upbit.get_balance(name)
+                    current_price= py.get_current_price(name)
+                    self.have_price=0
+
+                    for i in range(len(have_data)):
+                        z=have_data[i]['currency']
+                        if z==have_name:
+                            env.have_price=float(have_data[i]['avg_buy_price'])  #평단가
+                            break
+
+
+                #############################매도조건
+                if total_sto.iloc[-2]>0.95 or vr>160:
+                    if test_or_start==1:
+                        buy_or_sell=0   #매도
+                        self.buy_sell(name,balance2,buy_or_sell,max_trading_money)
+
+                ##############################손절 조건
+                if ((current_price-env.have_price)/env.have_price)<0 and total_sto5.iloc[-1]>0.8 and  env.have==1:
+                    #5분봉 sto rsi 0.9이상이고 손실이면 손절
+                    if test_or_start==1:
+                        buy_or_sell=0   #매도
+                        self.buy_sell(name,balance2,buy_or_sell,max_trading_money)
+
+                #############################추가매수 조건
+                if ((current_price-env.have_price)/env.have_price)<0 and total_sto15.iloc[-(env.plus_buy_count+1)*3]<0.02 and env.have==1: 
+                    if test_or_start==1:
+                        buy_or_sell=2 #추가매수
+                        self.buy_sell(name,self.balance/4,buy_or_sell,max_trading_money)
+       
+    
+    
+    def start_trading(self,name_):
+        
+        self.message(self.myToken, "#stock-trading", "트레이딩을 시작합니다")
+
+        #---------------------------------------------------------
+        ####로그인, 전체 잔고 조회
+        
+        self.balance= self.upbit.get_balance(ticker="KRW")
+        self.message(self.myToken, "#stock-trading",'원화=' )
+        self.message(self.myToken, "#stock-trading",env.balance )
+
+        balances= self.upbit.get_balances()
+        print('총자산',balances)
+
+
+
+        #-------------------완성되면 삭제
+        #Name,vol=env.data_list()
+        #name=Name
+        #have_name=Name.replace('KRW-','')
+
+        name=name_
+        have_name=name.replace('KRW-','')
+
+        self.message(self.myToken, "#stock-trading",'종목선정')
+        self.message(self.myToken, "#stock-trading",name )
+
+        period=14       #stochastic의 기간
+        VR_period=20
+        minute='minute30'
+        max_trading_money=100000
+        mind_period=10
+
+        #-------------------------
+
+        ###매수시 하이퍼 파라미터
+        VR_limit=30
+        trading_mind_limit=0.2
+        ###매도시 하이퍼 파라미터
+        sto_rsi_limit2=0.8
+        VR_limit2=160
+
+        while True:
+            self.buy_condition(period,name,have_name,minute,1,max_trading_money)
+            time.sleep(1)
+        
+
+access='key value'
+secret='key value'
+env=Env(access,secret)
+
             
